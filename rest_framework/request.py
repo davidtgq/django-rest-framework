@@ -16,7 +16,7 @@ from django.conf import settings
 from django.http import QueryDict
 from django.http.multipartparser import parse_header
 from django.http.request import RawPostDataException
-from django.utils import six
+from django.utils import six, timezone
 from django.utils.datastructures import MultiValueDict
 
 from rest_framework import HTTP_HEADER_ENCODING, exceptions
@@ -163,6 +163,12 @@ class Request(object):
     def content_type(self):
         meta = self._request.META
         return meta.get('CONTENT_TYPE', meta.get('HTTP_CONTENT_TYPE', ''))
+
+    @property
+    def time(self):
+        if not _hasattr(self, '_time'):
+            self._time = timezone.now()
+        return self._time
 
     @property
     def stream(self):
