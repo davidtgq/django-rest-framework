@@ -144,6 +144,7 @@ class Request(object):
         self._full_data = Empty
         self._content_type = Empty
         self._stream = Empty
+        self._time = Empty
 
         if self.parser_context is None:
             self.parser_context = {}
