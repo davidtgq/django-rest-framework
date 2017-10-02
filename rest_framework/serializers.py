@@ -170,37 +170,10 @@ class BaseSerializer(Field):
         raise NotImplementedError('`create()` must be implemented.')
 
     def save(self, **kwargs):
-        assert not hasattr(self, 'save_object'), (
-            'Serializer `%s.%s` has old-style version 2 `.save_object()` '
-            'that is no longer compatible with REST framework 3. '
-            'Use the new-style `.create()` and `.update()` methods instead.' %
-            (self.__class__.__module__, self.__class__.__name__)
-        )
-
-        assert hasattr(self, '_errors'), (
-            'You must call `.is_valid()` before calling `.save()`.'
-        )
-
-        assert not self.errors, (
-            'You cannot call `.save()` on a serializer with invalid data.'
-        )
-
-        # Guard against incorrect use of `serializer.save(commit=False)`
-        assert 'commit' not in kwargs, (
-            "'commit' is not a valid keyword argument to the 'save()' method. "
-            "If you need to access data before committing to the database then "
-            "inspect 'serializer.validated_data' instead. "
-            "You can also pass additional keyword arguments to 'save()' if you "
-            "need to set extra attributes on the saved model instance. "
-            "For example: 'serializer.save(owner=request.user)'.'"
-        )
-
-        assert not hasattr(self, '_data'), (
-            "You cannot call `.save()` after accessing `serializer.data`."
-            "If you need to access data before committing to the database then "
-            "inspect 'serializer.validated_data' instead. "
-        )
-
+        """
+        commit=False has no power here
+        You cannot call `.save()` after accessing `serializer.data`, use validated_data instead
+        """
         validated_data = dict(
             list(self.validated_data.items()) +
             list(kwargs.items())
@@ -208,30 +181,11 @@ class BaseSerializer(Field):
 
         if self.instance is not None:
             self.instance = self.update(self.instance, validated_data)
-            assert self.instance is not None, (
-                '`update()` did not return an object instance.'
-            )
         else:
             self.instance = self.create(validated_data)
-            assert self.instance is not None, (
-                '`create()` did not return an object instance.'
-            )
-
         return self.instance
 
     def is_valid(self, raise_exception=False):
-        assert not hasattr(self, 'restore_object'), (
-            'Serializer `%s.%s` has old-style version 2 `.restore_object()` '
-            'that is no longer compatible with REST framework 3. '
-            'Use the new-style `.create()` and `.update()` methods instead.' %
-            (self.__class__.__module__, self.__class__.__name__)
-        )
-
-        assert hasattr(self, 'initial_data'), (
-            'Cannot call `.is_valid()` as no `data=` keyword argument was '
-            'passed when instantiating the serializer instance.'
-        )
-
         if not hasattr(self, '_validated_data'):
             try:
                 self._validated_data = self.run_validation(self.initial_data)
@@ -248,16 +202,7 @@ class BaseSerializer(Field):
 
     @property
     def data(self):
-        if hasattr(self, 'initial_data') and not hasattr(self, '_validated_data'):
-            msg = (
-                'When a serializer is passed a `data` keyword argument you '
-                'must call `.is_valid()` before attempting to access the '
-                'serialized `.data` representation.\n'
-                'You should either call `.is_valid()` first, '
-                'or access `.initial_data` instead.'
-            )
-            raise AssertionError(msg)
-
+        """Must call `.is_valid()` first, or access `.initial_data` instead."""
         if not hasattr(self, '_data'):
             if self.instance is not None and not getattr(self, '_errors', None):
                 self._data = self.to_representation(self.instance)
@@ -276,9 +221,6 @@ class BaseSerializer(Field):
 
     @property
     def validated_data(self):
-        if not hasattr(self, '_validated_data'):
-            msg = 'You must call `.is_valid()` before accessing `.validated_data`.'
-            raise AssertionError(msg)
         return self._validated_data
 
 

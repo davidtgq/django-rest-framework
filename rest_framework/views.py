@@ -18,7 +18,7 @@ from rest_framework.compat import set_rollback
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
-from rest_framework.renderers import JSONRenderer
+from rest_framework.renderers import renderer
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import JSONParser
 
@@ -63,9 +63,6 @@ def exception_handler(exc, context):
         return Response(data, status=status.HTTP_403_FORBIDDEN)
 
     return None
-
-
-renderer = JSONRenderer()
 
 
 class APIView(View):
@@ -138,20 +135,6 @@ class APIView(View):
             'kwargs': getattr(self, 'kwargs', {})
         }
 
-    def get_renderer_context(self):
-        """
-        Returns a dict that is passed through to Renderer.render(),
-        as the `renderer_context` keyword argument.
-        """
-        # Note: Additionally 'response' will also be added to the context,
-        #       by the Response object.
-        return {
-            'view': self,
-            'args': getattr(self, 'args', ()),
-            'kwargs': getattr(self, 'kwargs', {}),
-            'request': getattr(self, 'request', None)
-        }
-
     def get_exception_handler_context(self):
         """
         Returns a dict that is passed through to EXCEPTION_HANDLER,
@@ -180,12 +163,6 @@ class APIView(View):
         """
         if self.settings.FORMAT_SUFFIX_KWARG:
             return kwargs.get(self.settings.FORMAT_SUFFIX_KWARG)
-
-    def get_renderers(self):
-        """
-        Instantiates and returns the list of renderers that this view can use.
-        """
-        return [JSONRenderer()]
 
     def get_authenticators(self):
         """
@@ -222,10 +199,6 @@ class APIView(View):
         )
 
     def finalize_response(self, request, response, *args, **kwargs):
-        response.accepted_renderer = request.accepted_renderer
-        response.accepted_media_type = request.accepted_media_type
-        response.renderer_context = self.get_renderer_context()
-
         # Add new vary headers to the response instead of overwriting.
         vary_headers = self.headers.pop('Vary', None)
         if vary_headers is not None:
@@ -275,7 +248,6 @@ class APIView(View):
         self.headers = {}
 
         try:
-            request.accepted_renderer, request.accepted_media_type = renderer, renderer.media_type
             method = request.method.lower()
             handler = self.http_method_not_allowed
             if method in self.http_method_names:
