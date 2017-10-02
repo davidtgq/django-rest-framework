@@ -1,8 +1,6 @@
 """
 Provides an APIView class that is the base of all views in REST framework.
 """
-from __future__ import unicode_literals
-
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import models
@@ -18,7 +16,6 @@ from rest_framework.compat import set_rollback
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
-from rest_framework.renderers import renderer
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import JSONParser
 

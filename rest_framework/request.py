@@ -23,6 +23,11 @@ from rest_framework import HTTP_HEADER_ENCODING, exceptions
 from rest_framework.settings import api_settings
 from ipware.ip import get_real_ip
 
+try:
+    from users.models import AnonymousUser
+except:
+    from django.contrib.auth.models import AnonymousUser
+
 
 def is_form_media_type(media_type):
     """
@@ -376,16 +381,8 @@ class Request(object):
         Defaults are None, AnonymousUser & None.
         """
         self._authenticator = None
-
-        if api_settings.UNAUTHENTICATED_USER:
-            self.user = api_settings.UNAUTHENTICATED_USER()
-        else:
-            self.user = None
-
-        if api_settings.UNAUTHENTICATED_TOKEN:
-            self.auth = api_settings.UNAUTHENTICATED_TOKEN()
-        else:
-            self.auth = None
+        self.user = AnonymousUser
+        self.auth = None
 
     def __getattribute__(self, attr):
         """

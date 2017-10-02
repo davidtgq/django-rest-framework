@@ -3,21 +3,15 @@ import os
 
 from django.conf import settings
 from django.db import models
-from django.utils.encoding import python_2_unicode_compatible
-from django.utils.translation import ugettext_lazy as _
 
 
-@python_2_unicode_compatible
 class Token(models.Model):
     """
     The default authorization token model.
     """
-    key = models.CharField(_("Key"), max_length=40, primary_key=True)
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, related_name='auth_token',
-        on_delete=models.CASCADE, verbose_name=_("User")
-    )
-    created = models.DateTimeField(_("Created"), auto_now_add=True)
+    key = models.CharField(max_length=40, primary_key=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, related_name='auth_token', on_delete=models.CASCADE)
+    created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         # Work around for a bug in Django:
@@ -26,8 +20,6 @@ class Token(models.Model):
         # Also see corresponding ticket:
         # https://github.com/encode/django-rest-framework/issues/705
         abstract = 'rest_framework.authtoken' not in settings.INSTALLED_APPS
-        verbose_name = _("Token")
-        verbose_name_plural = _("Tokens")
 
     def save(self, *args, **kwargs):
         if not self.key:
