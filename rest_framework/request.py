@@ -21,6 +21,7 @@ from django.utils.datastructures import MultiValueDict
 
 from rest_framework import HTTP_HEADER_ENCODING, exceptions
 from rest_framework.settings import api_settings
+from ipware.ip import get_real_ip
 
 
 def is_form_media_type(media_type):
@@ -144,6 +145,7 @@ class Request(object):
         self._full_data = Empty
         self._content_type = Empty
         self._stream = Empty
+        self._ip = Empty
         self._time = Empty
 
         if self.parser_context is None:
@@ -164,6 +166,12 @@ class Request(object):
     def content_type(self):
         meta = self._request.META
         return meta.get('CONTENT_TYPE', meta.get('HTTP_CONTENT_TYPE', ''))
+
+    @property
+    def ip(self):
+        if not _hasattr(self, '_ip'):
+            self._ip = get_real_ip(self)  # If anomalies, use self._request
+        return self._ip
 
     @property
     def time(self):
