@@ -7,10 +7,8 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import models
 from django.http import Http404
-from django.http.response import HttpResponseBase
 from django.utils import six
 from django.utils.cache import cc_delim_re, patch_vary_headers
-from django.utils.encoding import smart_text
 from django.utils.translation import ugettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
@@ -19,40 +17,10 @@ from rest_framework import exceptions, status
 from rest_framework.compat import set_rollback
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.schemas import AutoSchema
 from rest_framework.settings import api_settings
-from rest_framework.utils import formatting
-
-
-def get_view_name(view_cls, suffix=None):
-    """
-    Given a view class, return a textual name to represent the view.
-    This name is used in the browsable API, and in OPTIONS responses.
-
-    This function is the default for the `VIEW_NAME_FUNCTION` setting.
-    """
-    name = view_cls.__name__
-    name = formatting.remove_trailing_string(name, 'View')
-    name = formatting.remove_trailing_string(name, 'ViewSet')
-    name = formatting.camelcase_to_spaces(name)
-    if suffix:
-        name += ' ' + suffix
-
-    return name
-
-
-def get_view_description(view_cls, html=False):
-    """
-    Given a view class, return a textual description to represent the view.
-    This name is used in the browsable API, and in OPTIONS responses.
-
-    This function is the default for the `VIEW_DESCRIPTION_FUNCTION` setting.
-    """
-    description = view_cls.__doc__ or ''
-    description = formatting.dedent(smart_text(description))
-    if html:
-        return formatting.markup_description(description)
-    return description
+from rest_framework.renderers import JSONRenderer
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.parsers import JSONParser
 
 
 def exception_handler(exc, context):
@@ -97,22 +65,12 @@ def exception_handler(exc, context):
     return None
 
 
+renderer = JSONRenderer()
+
+
 class APIView(View):
-
-    # The following policies may be set at either globally, or per-view.
-    renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES
-    parser_classes = api_settings.DEFAULT_PARSER_CLASSES
-    authentication_classes = api_settings.DEFAULT_AUTHENTICATION_CLASSES
-    throttle_classes = api_settings.DEFAULT_THROTTLE_CLASSES
-    permission_classes = api_settings.DEFAULT_PERMISSION_CLASSES
-    content_negotiation_class = api_settings.DEFAULT_CONTENT_NEGOTIATION_CLASS
-    metadata_class = api_settings.DEFAULT_METADATA_CLASS
-    versioning_class = api_settings.DEFAULT_VERSIONING_CLASS
-
     # Allow dependency injection of other settings to make testing easier.
     settings = api_settings
-
-    schema = AutoSchema()
 
     @classmethod
     def as_view(cls, **initkwargs):
@@ -146,15 +104,6 @@ class APIView(View):
         """
         return self._allowed_methods()
 
-    @property
-    def default_response_headers(self):
-        headers = {
-            'Allow': ', '.join(self.allowed_methods),
-        }
-        if len(self.renderer_classes) > 1:
-            headers['Vary'] = 'Accept'
-        return headers
-
     def http_method_not_allowed(self, request, *args, **kwargs):
         """
         If `request.method` does not correspond to a handler method,
@@ -175,15 +124,6 @@ class APIView(View):
         If request is throttled, determine what kind of exception to raise.
         """
         raise exceptions.Throttled(wait)
-
-    def get_authenticate_header(self, request):
-        """
-        If a request is unauthenticated, determine the WWW-Authenticate
-        header to use for 401 responses, if any.
-        """
-        authenticators = self.get_authenticators()
-        if authenticators:
-            return authenticators[0].authenticate_header(request)
 
     def get_parser_context(self, http_request):
         """
@@ -224,14 +164,6 @@ class APIView(View):
             'request': getattr(self, 'request', None)
         }
 
-    def get_view_name(self):
-        """
-        Return the view name, as used in OPTIONS responses and in the
-        browsable API.
-        """
-        func = self.settings.VIEW_NAME_FUNCTION
-        return func(self.__class__, getattr(self, 'suffix', None))
-
     def get_view_description(self, html=False):
         """
         Return some descriptive text for the view, as used in OPTIONS responses
@@ -253,39 +185,13 @@ class APIView(View):
         """
         Instantiates and returns the list of renderers that this view can use.
         """
-        return [renderer() for renderer in self.renderer_classes]
-
-    def get_parsers(self):
-        """
-        Instantiates and returns the list of parsers that this view can use.
-        """
-        return [parser() for parser in self.parser_classes]
+        return [JSONRenderer()]
 
     def get_authenticators(self):
         """
         Instantiates and returns the list of authenticators that this view can use.
         """
         return [auth() for auth in self.authentication_classes]
-
-    def get_permissions(self):
-        """
-        Instantiates and returns the list of permissions that this view requires.
-        """
-        return [permission() for permission in self.permission_classes]
-
-    def get_throttles(self):
-        """
-        Instantiates and returns the list of throttles that this view uses.
-        """
-        return [throttle() for throttle in self.throttle_classes]
-
-    def get_content_negotiator(self):
-        """
-        Instantiate and return the content negotiation class to use.
-        """
-        if not getattr(self, '_negotiator', None):
-            self._negotiator = self.content_negotiation_class()
-        return self._negotiator
 
     def get_exception_handler(self):
         """
@@ -294,20 +200,6 @@ class APIView(View):
         return self.settings.EXCEPTION_HANDLER
 
     # API policy implementation methods
-
-    def perform_content_negotiation(self, request, force=False):
-        """
-        Determine which renderer and media type to use render the response.
-        """
-        renderers = self.get_renderers()
-        conneg = self.get_content_negotiator()
-
-        try:
-            return conneg.select_renderer(request, renderers, self.format_kwarg)
-        except Exception:
-            if force:
-                return (renderers[0], renderers[0].media_type)
-            raise
 
     def perform_authentication(self, request):
         """
@@ -319,101 +211,20 @@ class APIView(View):
         """
         request.user
 
-    def check_permissions(self, request):
-        """
-        Check if the request should be permitted.
-        Raises an appropriate exception if the request is not permitted.
-        """
-        for permission in self.get_permissions():
-            if not permission.has_permission(request, self):
-                self.permission_denied(
-                    request, message=getattr(permission, 'message', None)
-                )
-
-    def check_object_permissions(self, request, obj):
-        """
-        Check if the request should be permitted for a given object.
-        Raises an appropriate exception if the request is not permitted.
-        """
-        for permission in self.get_permissions():
-            if not permission.has_object_permission(request, self, obj):
-                self.permission_denied(
-                    request, message=getattr(permission, 'message', None)
-                )
-
-    def check_throttles(self, request):
-        """
-        Check if request should be throttled.
-        Raises an appropriate exception if the request is throttled.
-        """
-        for throttle in self.get_throttles():
-            if not throttle.allow_request(request, self):
-                self.throttled(request, throttle.wait())
-
-    def determine_version(self, request, *args, **kwargs):
-        """
-        If versioning is being used, then determine any API version for the
-        incoming request. Returns a two-tuple of (version, versioning_scheme)
-        """
-        if self.versioning_class is None:
-            return (None, None)
-        scheme = self.versioning_class()
-        return (scheme.determine_version(request, *args, **kwargs), scheme)
-
     # Dispatch methods
 
     def initialize_request(self, request, *args, **kwargs):
-        """
-        Returns the initial request object.
-        """
-        parser_context = self.get_parser_context(request)
-
         return Request(
             request,
-            parsers=self.get_parsers(),
-            authenticators=self.get_authenticators(),
-            negotiator=self.get_content_negotiator(),
-            parser_context=parser_context
+            parsers=[JSONParser()],
+            authenticators=[TokenAuthentication()],
+            parser_context=self.get_parser_context(request)
         )
-
-    def initial(self, request, *args, **kwargs):
-        """
-        Runs anything that needs to occur prior to calling the method handler.
-        """
-        self.format_kwarg = self.get_format_suffix(**kwargs)
-
-        # Perform content negotiation and store the accepted info on the request
-        neg = self.perform_content_negotiation(request)
-        request.accepted_renderer, request.accepted_media_type = neg
-
-        # Determine the API version, if versioning is in use.
-        version, scheme = self.determine_version(request, *args, **kwargs)
-        request.version, request.versioning_scheme = version, scheme
-
-        # Ensure that the incoming request is permitted
-        self.perform_authentication(request)
-        self.check_permissions(request)
-        self.check_throttles(request)
 
     def finalize_response(self, request, response, *args, **kwargs):
-        """
-        Returns the final response object.
-        """
-        # Make the error obvious if a proper response is not returned
-        assert isinstance(response, HttpResponseBase), (
-            'Expected a `Response`, `HttpResponse` or `HttpStreamingResponse` '
-            'to be returned from the view, but received a `%s`'
-            % type(response)
-        )
-
-        if isinstance(response, Response):
-            if not getattr(request, 'accepted_renderer', None):
-                neg = self.perform_content_negotiation(request, force=True)
-                request.accepted_renderer, request.accepted_media_type = neg
-
-            response.accepted_renderer = request.accepted_renderer
-            response.accepted_media_type = request.accepted_media_type
-            response.renderer_context = self.get_renderer_context()
+        response.accepted_renderer = request.accepted_renderer
+        response.accepted_media_type = request.accepted_media_type
+        response.renderer_context = self.get_renderer_context()
 
         # Add new vary headers to the response instead of overwriting.
         vary_headers = self.headers.pop('Vary', None)
@@ -430,16 +241,6 @@ class APIView(View):
         Handle any exception that occurs, by returning an appropriate response,
         or re-raising the error.
         """
-        if isinstance(exc, (exceptions.NotAuthenticated,
-                            exceptions.AuthenticationFailed)):
-            # WWW-Authenticate header for 401 responses, else coerce to 403
-            auth_header = self.get_authenticate_header(self.request)
-
-            if auth_header:
-                exc.auth_header = auth_header
-            else:
-                exc.status_code = status.HTTP_403_FORBIDDEN
-
         exception_handler = self.get_exception_handler()
 
         context = self.get_exception_handler_context()
@@ -471,31 +272,17 @@ class APIView(View):
         self.kwargs = kwargs
         request = self.initialize_request(request, *args, **kwargs)
         self.request = request
-        self.headers = self.default_response_headers  # deprecate?
+        self.headers = {}
 
         try:
-            self.initial(request, *args, **kwargs)
-
-            # Get the appropriate handler method
-            if request.method.lower() in self.http_method_names:
-                handler = getattr(self, request.method.lower(),
-                                  self.http_method_not_allowed)
-            else:
-                handler = self.http_method_not_allowed
-
+            request.accepted_renderer, request.accepted_media_type = renderer, renderer.media_type
+            method = request.method.lower()
+            handler = self.http_method_not_allowed
+            if method in self.http_method_names:
+                handler = getattr(self, method, handler)
             response = handler(request, *args, **kwargs)
-
         except Exception as exc:
             response = self.handle_exception(exc)
 
         self.response = self.finalize_response(request, response, *args, **kwargs)
         return self.response
-
-    def options(self, request, *args, **kwargs):
-        """
-        Handler method for HTTP 'OPTIONS' request.
-        """
-        if self.metadata_class is None:
-            return self.http_method_not_allowed(request, *args, **kwargs)
-        data = self.metadata_class().determine_metadata(request, self)
-        return Response(data, status=status.HTTP_200_OK)

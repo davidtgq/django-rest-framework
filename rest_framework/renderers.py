@@ -33,6 +33,20 @@ from rest_framework.utils import encoders, json
 from rest_framework.utils.breadcrumbs import get_breadcrumbs
 from rest_framework.utils.field_mapping import ClassLookupDict
 
+json_encoder = encoders.JSONEncoder(ensure_ascii=False, check_circular=False, allow_nan=False, separators=(',', ':'))
+
+
+class JSONRenderer:
+    media_type = 'application/json'
+    format = 'json'
+    charset = 'utf-8'
+    render_style = 'text'
+
+    def render(self, data, *_):
+        if data is None:
+            return bytes()
+        return json_encoder.encode(data)
+
 
 def zero_as_none(value):
     return None if value == 0 else value
@@ -52,7 +66,7 @@ class BaseRenderer(object):
         raise NotImplementedError('Renderer class requires .render() to be implemented')
 
 
-class JSONRenderer(BaseRenderer):
+class JSONRendererGarbage(BaseRenderer):
     """
     Renderer which serializes to JSON.
     """
